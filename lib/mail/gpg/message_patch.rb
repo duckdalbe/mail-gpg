@@ -1,5 +1,5 @@
 require 'hkp'
-require 'mail/gpg/delivery_handler'
+require 'mail/gpg/interceptor'
 require 'mail/gpg/verify_result_attribute'
 
 module Mail
@@ -11,6 +11,7 @@ module Mail
           attr_accessor :raise_encryption_errors
           include VerifyResultAttribute
         end
+        Mail.register_interceptor(Mail::Gpg::Interceptor)
       end
 
       # turn on gpg encryption / set gpg options.
@@ -41,14 +42,10 @@ module Mail
           @gpg
         when false
           @gpg = nil
-          if Mail::Gpg::DeliveryHandler == delivery_handler
-            self.delivery_handler = nil
-          end
           nil
         else
           self.raise_encryption_errors = true if raise_encryption_errors.nil?
           @gpg = options
-          self.delivery_handler ||= Mail::Gpg::DeliveryHandler
           nil
         end
       end

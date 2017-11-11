@@ -25,38 +25,43 @@ module Mail
     # key ids. Imports any keys given here that are not already part of the
     # local keychain before sending the mail.
     # :always_trust: send encrypted mail to untrusted receivers, true by default
-    def self.encrypt(cleartext_mail, options = {})
-      construct_mail(cleartext_mail, options) do
-        receivers = []
-        receivers += cleartext_mail.to if cleartext_mail.to
-        receivers += cleartext_mail.cc if cleartext_mail.cc
-        receivers += cleartext_mail.bcc if cleartext_mail.bcc
+    def self.encrypt(mail, options = {})
+      receivers = []
+      receivers += mail.to if mail.to
+      receivers += mail.cc if mail.cc
+      receivers += mail.bcc if mail.bcc
 
-        if options[:sign_as]
-          options[:sign] = true
-          options[:signers] = options.delete(:sign_as)
-        elsif options[:sign]
-          options[:signers] = cleartext_mail.from
-        end
-
-        add_part VersionPart.new
-        add_part EncryptedPart.new(cleartext_mail,
-                                   options.merge({recipients: receivers}))
-        content_type "multipart/encrypted; protocol=\"application/pgp-encrypted\"; boundary=#{boundary}"
-        body.preamble = options[:preamble] || "This is an OpenPGP/MIME encrypted message (RFC 2440 and 3156)"
+      if options[:sign_as]
+        options[:sign] = true
+        options[:signers] = options.delete(:sign_as)
+      elsif options[:sign]
+        options[:signers] = mail.from
       end
+
+      encrypted = EncryptedPart.new(mail,
+                                 options.merge({recipients: receivers}))
+      mail.body = nil
+      mail.parts.clear
+      mail.add_part VersionPart.new
+      mail.add_part encrypted
+      mail.content_transfer_encoding = nil
+      mail.content_disposition = nil
+      mail.content_type "multipart/encrypted; protocol=\"application/pgp-encrypted\"; boundary=#{mail.boundary}"
+      mail.body.preamble = options[:preamble] || "This is an OpenPGP/MIME encrypted message (RFC 2440 and 3156)"
     end
 
-    def self.sign(cleartext_mail, options = {})
-      options[:sign_as] ||= cleartext_mail.from
-      construct_mail(cleartext_mail, options) do
-        to_be_signed = SignedPart.build(cleartext_mail)
-        add_part to_be_signed
-        add_part to_be_signed.sign(options)
+    def self.sign(mail, options = {})
+      options[:sign_as] ||= mail.from
+      to_be_signed = SignedPart.build(mail)
+      mail.body = nil
+      mail.parts.clear
+      mail.add_part to_be_signed
+      mail.add_part to_be_signed.sign(options)
 
-        content_type "multipart/signed; micalg=pgp-sha1; protocol=\"application/pgp-signature\"; boundary=#{boundary}"
-        body.preamble = options[:preamble] || "This is an OpenPGP/MIME signed message (RFC 4880 and 3156)"
-      end
+      mail.content_transfer_encoding = nil
+      mail.content_disposition = nil
+      mail.content_type "multipart/signed; micalg=pgp-sha1; protocol=\"application/pgp-signature\"; boundary=#{mail.boundary}"
+      mail.body.preamble = options[:preamble] || "This is an OpenPGP/MIME signed message (RFC 4880 and 3156)"
     end
 
     # options are:
@@ -101,18 +106,6 @@ module Mail
     end
 
     private
-
-    def self.construct_mail(cleartext_mail, options, &block)
-      Mail.new do
-        self.perform_deliveries = cleartext_mail.perform_deliveries
-        Mail::Gpg.copy_headers cleartext_mail, self
-        # necessary?
-        if cleartext_mail.message_id
-          header['Message-ID'] = cleartext_mail['Message-ID'].value
-        end
-        instance_eval &block
-      end
-    end
 
     # decrypts PGP/MIME (RFC 3156, section 4) encrypted mail
     def self.decrypt_pgp_mime(encrypted_mail, options)

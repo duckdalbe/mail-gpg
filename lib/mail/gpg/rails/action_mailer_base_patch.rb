@@ -26,9 +26,9 @@ module Mail
         end
 
         module ClassMethods
-          def deliver_mail(mail, &block)
+          def delivering_email(mail)
             super(mail) do
-              Mail::Gpg::DeliveryHandler.deliver_mail mail, &block
+              Mail::Gpg::Interceptor.delivering_email(mail)
             end
           end
         end
